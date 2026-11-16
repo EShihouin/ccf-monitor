@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCF Control Health</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap">
+<style>
+/* Layout: control-room console. Summary strip (control counts + framework readiness) above a scannable control register; tapping a control opens its evidence and blast radius. */
+:root {
+  --bg: #f4f6f8; --surface: #ffffff; --line: #d9dee5; --fg: #17202b; --muted: #5b6676;
+  --accent: #24548a; --accent-soft: #e3ecf6;
+  --pass: #1d7a4b; --pass-soft: #e2f3ea; --warn: #9a6200; --warn-soft: #fbf0d9; --fail: #b3261e; --fail-soft: #fbe7e5;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141a; --surface: #161d25; --line: #2a3441; --fg: #e6ebf1; --muted: #93a0b0;
+  --accent: #7fb0e6; --accent-soft: #1c2b3d;
+  --pass: #5fcf93; --pass-soft: #14291e; --warn: #f0b54a; --warn-soft: #2e2412; --fail: #ff8a80; --fail-soft: #33191a;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f141a; --surface: #161d25; --line: #2a3441; --fg: #e6ebf1; --muted: #93a0b0;
+  --accent: #7fb0e6; --accent-soft: #1c2b3d;
+  --pass: #5fcf93; --pass-soft: #14291e; --warn: #f0b54a; --warn-soft: #2e2412; --fail: #ff8a80; --fail-soft: #33191a;
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: end; justify-content: space-between; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font: 600 clamp(28px, 5vw, 40px)/1.05 var(--display); margin: 6px 0 4px; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0; max-width: 62ch; }
+.asof { font: 13px var(--mono); color: var(--muted); }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.tile h2 { font: 500 12px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.counts { display: flex; gap: 18px; font-variant-numeric: tabular-nums; }
+.counts b { font: 600 30px/1 var(--display); display: block; }
+.counts span { font-size: 12px; color: var(--muted); }
+.c-pass b { color: var(--pass); } .c-warn b { color: var(--warn); } .c-fail b { color: var(--fail); } .c-error b { color: var(--muted); }
+.fw-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fw-pct { font: 600 30px/1 var(--display); font-variant-numeric: tabular-nums; }
+.bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s ease; }
+.fw-note { font-size: 13px; color: var(--muted); }
+.fw-note code { font: 12px var(--mono); color: var(--fail); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar .lbl { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-right: 4px; }
+.chipbtn { font: 500 13px var(--body); border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.chipbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.chipbtn:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.register { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.head, .row { display: grid; grid-template-columns: 92px minmax(0, 1.6fr) 96px minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; align-items: center; padding: 12px 16px; }
+.head { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); border-bottom: 1px solid var(--line); }
+.row { border-bottom: 1px solid var(--line); cursor: pointer; border-left: 4px solid transparent; }
+.row:last-child { border-bottom: 0; }
+.row:hover { background: var(--accent-soft); }
+.row.s-fail { border-left-color: var(--fail); } .row.s-warn, .row.s-at_risk { border-left-color: var(--warn); } .row.s-pass { border-left-color: var(--pass); } .row.s-error { border-left-color: var(--muted); }
+.row.hl { background: var(--accent-soft); }
+.id { font: 500 13px var(--mono); }
+.name b { font-weight: 600; display: block; } .name span { font-size: 13px; color: var(--muted); }
+.pill { font: 600 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 4px 9px; justify-self: start; }
+.pill.pass { color: var(--pass); background: var(--pass-soft); } .pill.warn, .pill.at_risk { color: var(--warn); background: var(--warn-soft); } .pill.fail { color: var(--fail); background: var(--fail-soft); } .pill.error { color: var(--muted); background: var(--line); }
+.metric { font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+.maps { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; color: var(--muted); white-space: nowrap; }
+.tag.k-iso { color: var(--accent); }
+.detail { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; }
+.detail h3 { font: 600 22px/1.15 var(--display); margin: 0; }
+.dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.dgrid section { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.dgrid h4 { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0; }
+.dgrid p, .dgrid ul { margin: 0; } .dgrid ul { padding-left: 18px; }
+.blast { display: grid; gap: 6px; }
+.blast div { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.blast strong { min-width: 110px; font-weight: 500; }
+.hint { color: var(--muted); font-size: 13px; }
+footer { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  .head { display: none; }
+  .row { grid-template-columns: 1fr auto; grid-template-areas: "id pill" "name name" "metric metric" "maps maps"; gap: 6px 10px; }
+  .row .id { grid-area: id; } .row .pill { grid-area: pill; justify-self: end; } .row .name { grid-area: name; }
+  .row .metric { grid-area: metric; } .row .maps { grid-area: maps; }
+}
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Common Control Framework · live evidence</div>
+      <h1>CCF Control Health</h1>
+      <p class="sub">Controls anchored in NIST 800-53 and mapped to ISO 27001 and SOC 2. Each one is tested against evidence pulled read-only from AWS, GitHub, an AI agent config and scanner output. Missing or unreadable evidence is an error, never a pass.</p>
+    </div>
+    <div class="asof" id="asof"></div>
+  </header>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="toolbar" role="group" aria-label="Filter controls">
+    <span class="lbl">Show</span>
+    <button class="chipbtn" id="f-all" data-f="all" aria-pressed="true">All</button>
+    <button class="chipbtn" id="f-fail" data-f="fail" aria-pressed="false">Failing</button>
+    <button class="chipbtn" id="f-warn" data-f="at_risk" aria-pressed="false">At risk</button>
+    <button class="chipbtn" id="f-pass" data-f="pass" aria-pressed="false">Passing</button>
+    <button class="chipbtn" id="f-error" data-f="error" aria-pressed="false">Error</button>
+  </div>
+
+  <div class="register" role="list" id="register">
+    <div class="head" aria-hidden="true"><span>Control</span><span>Name / owner</span><span>Status</span><span>Measure</span><span>Mapped requirements</span></div>
+  </div>
+
+  <div class="detail" id="detail" aria-live="polite"></div>
+
+  <footer>Generated by <code>python3 monitor.py</code>. Fail: the control isn't working. At risk: passing, but needs attention soon. Error: the evidence couldn't be collected or read, so the control is unproven.</footer>
+</div>
+
+<script>
+const DATA = __CCF_DATA__;
+const FW = { nist_800_53: "800-53", iso_27001: "ISO", soc2: "SOC 2" };
+const LABEL = { pass: "Pass", at_risk: "At risk", fail: "Fail", error: "Error" };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let filter = "all";
+let selected = (DATA.controls.find((c) => c.status === "fail") || DATA.controls.find((c) => c.status === "error") || DATA.controls[0]).id;
+$("#asof").textContent = "Evidence as of " + DATA.as_of + (DATA.repo ? " · " + DATA.repo : "");
+
+function strip() {
+  const c = DATA.counts;
+  let h = `<div class="tile"><h2>Control status</h2><div class="counts">
+    <div class="c-pass"><b>${c.pass}</b><span>pass</span></div>
+    <div class="c-warn"><b>${c.at_risk}</b><span>at risk</span></div>
+    <div class="c-fail"><b>${c.fail}</b><span>fail</span></div>
+    <div class="c-error"><b>${c.error}</b><span>error</span></div></div></div>`;
+  for (const fw of DATA.frameworks) {
+    const gaps = fw.gaps.map((r) => `<code>${esc(r.id)}</code>`).join(", ");
+    h += `<div class="tile"><h2>${esc(fw.label)} readiness</h2>
+      <div class="fw-top"><span class="fw-pct">${fw.pct}%</span><span class="fw-note">${fw.ready}/${fw.total} requirements</span></div>
+      <div class="bar"><i style="width:${fw.pct}%"></i></div>
+      <div class="fw-note">${fw.gaps.length ? "Gaps: " + gaps : "No open gaps"}</div></div>`;
+  }
+  $("#strip").innerHTML = h;
+}
+
+function tags(c) {
+  return Object.keys(FW).map((k) => c.mappings[k].map((r) =>
+    `<span class="tag k-${k.split("_")[0]}">${FW[k]} ${esc(r)}</span>`).join("")).join("");
+}
+
+function register() {
+  const rows = DATA.controls.filter((c) => filter === "all" || c.status === filter);
+  const reg = $("#register");
+  reg.querySelectorAll(".row, .hint").forEach((n) => n.remove());
+  if (!rows.length) { reg.insertAdjacentHTML("beforeend", `<p class="hint" style="padding:16px;margin:0">No controls in this view.</p>`); return; }
+  for (const c of rows) {
+    reg.insertAdjacentHTML("beforeend", `<div class="row s-${c.status}${c.id === selected ? " hl" : ""}" role="listitem" tabindex="0" data-id="${c.id}">
+      <span class="id">${c.id}</span>
+      <span class="name"><b>${esc(c.name)}</b><span>${esc(c.owner)} · ${esc(c.frequency)}</span></span>
+      <span class="pill ${c.status}">${LABEL[c.status]}</span>
+      <span class="metric">${esc(c.metric)}</span>
+      <span class="maps">${tags(c)}</span></div>`);
+  }
+}
+
+function detail() {
+  const c = DATA.controls.find((x) => x.id === selected);
+  const blast = Object.keys(FW).map((k) => {
+    const fw = DATA.frameworks.find((f) => f.key === k);
+    return `<div><strong>${esc(fw.label)}</strong>${c.mappings[k].map((r) => `<span class="tag">${esc(r)}</span>`).join("")}</div>`;
+  }).join("") + (c.cis_aws ? `<div><strong>CIS AWS</strong><span class="tag">${esc(c.cis_aws)}</span></div>` : "");
+  const why = c.items.length ? `<ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : `<p class="hint">Nothing flagged.</p>`;
+  const impact = c.status === "fail" || c.status === "error"
+    ? "Until this is fixed, every requirement below is a gap in its framework."
+    : "One test of this control is evidence for every requirement below.";
+  $("#detail").innerHTML = `<div class="fw-top"><h3>${c.id} · ${esc(c.name)}</h3><span class="pill ${c.status}">${LABEL[c.status]}</span></div>
+    <div class="dgrid">
+      <section><h4>Control statement</h4><p>${esc(c.statement)}</p><p class="hint">Risk: ${esc(c.risk)}</p></section>
+      <section><h4>Test result</h4><p>${esc(c.summary)}</p>${why}<p class="hint">Rule: ${esc(c.pass_rule)}</p></section>
+      <section><h4>Test once, comply many</h4><p class="hint">${impact}</p><div class="blast">${blast}</div></section>
+      <section><h4>Evidence</h4><p>${esc(c.evidence_source)}</p><p class="metric">${esc(c.evidence || "none collected")}</p></section>
+    </div>`;
+}
+
+document.querySelectorAll(".chipbtn").forEach((b) => b.addEventListener("click", () => {
+  filter = b.dataset.f;
+  document.querySelectorAll(".chipbtn").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  register();
+}));
+$("#register").addEventListener("click", (e) => { const r = e.target.closest(".row"); if (r) pick(r.dataset.id); });
+$("#register").addEventListener("keydown", (e) => { const r = e.target.closest(".row"); if (r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(r.dataset.id); } });
+function pick(id) { selected = id; register(); detail(); $("#detail").scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+strip(); register(); detail();
+</script>

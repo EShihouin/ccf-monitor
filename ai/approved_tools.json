@@ -1,0 +1,4 @@
+{
+  "approved_by": "AI governance",
+  "approved_tools": ["crm.read_case", "kb.search", "crm.update_case"]
+}

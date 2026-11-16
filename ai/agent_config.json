@@ -1,0 +1,11 @@
+{
+  "name": "support-case-summarizer",
+  "description": "Sample AI agent that summarizes support cases. Fictional, for CCF-09.",
+  "owner": "",
+  "tools": [
+    {"name": "crm.read_case", "access": "read"},
+    {"name": "kb.search", "access": "read"},
+    {"name": "crm.update_case", "access": "write", "requires_human_approval": false},
+    {"name": "email.send_customer", "access": "write", "requires_human_approval": true}
+  ]
+}
